@@ -13,7 +13,7 @@
         }
       },
       "id": "schedule-trigger",
-      "name": "Daily 9 AM IST Trigger",
+      "name": "Daily 10:30 PM IST Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -210,7 +210,7 @@
     }
   ],
   "connections": {
-    "Daily 9 AM IST Trigger": {
+    "Daily 10:30 PM IST Trigger": {
       "main": [
         [
           {
