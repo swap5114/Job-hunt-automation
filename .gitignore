@@ -30,4 +30,6 @@ ollama_data/
 # Personal Data & Leads (DO NOT SHARE PUBLICLY)
 config.yaml
 assets/
+ingest/
 *.csv
+*.processed

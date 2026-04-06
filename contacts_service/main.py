@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import csv
+import shutil
+import asyncio
 from io import StringIO
 import httpx
 from fastapi import FastAPI, HTTPException, Query, UploadFile, File
@@ -26,9 +28,75 @@ logger = logging.getLogger(__name__)
 
 # ── Config ───────────────────────────────────────────────────
 DB_PATH = "/app/data/contacts.db"
+INGEST_PATH = "/app/ingest"
 
 
-# ── Database helpers ─────────────────────────────────────────
+# ── CSV File Ingestion Helper ────────────────────────────────
+def process_csv_content(text: str) -> dict:
+    """Helper to parse CSV text and upsert contacts."""
+    reader = csv.DictReader(StringIO(text))
+    saved_count = 0
+    duplicate_count = 0
+    skipped_count = 0
+
+    for row in reader:
+        email = row.get("Email", "").strip()
+        if not email or email.lower() == "not available":
+            skipped_count += 1
+            continue
+
+        first_name = row.get("First Name", "").strip()
+        last_name = row.get("Last Name", "").strip()
+
+        c = {
+            "name": f"{first_name} {last_name}".strip(),
+            "email": email,
+            "company": row.get("Company Name"),
+            "title": row.get("Title"),
+            "linkedin_url": row.get("Person Linkedin Url"),
+            "company_description": row.get("Keywords", ""),
+        }
+
+        row_id = upsert_contact(c)
+        if row_id:
+            saved_count += 1
+        else:
+            duplicate_count += 1
+    
+    return {
+        "saved": saved_count,
+        "duplicates": duplicate_count,
+        "skipped": skipped_count
+    }
+
+
+async def auto_ingest_worker():
+    """Background task to scan for new CSV files in the ingest folder."""
+    os.makedirs(INGEST_PATH, exist_ok=True)
+    logger.info("Auto-ingest worker started. Watching %s", INGEST_PATH)
+
+    while True:
+        try:
+            files = [f for f in os.listdir(INGEST_PATH) if f.endswith(".csv")]
+            for filename in files:
+                file_path = os.path.join(INGEST_PATH, filename)
+                logger.info("Auto-importing: %s", filename)
+
+                try:
+                    with open(file_path, "r", encoding="utf-8-sig") as f:
+                        stats = process_csv_content(f.read())
+                    
+                    # Mark as processed
+                    shutil.move(file_path, f"{file_path}.processed")
+                    logger.info("Successfully ingested %s: Saved %d, Duplicates %d", 
+                                filename, stats["saved"], stats["duplicates"])
+                except Exception as e:
+                    logger.error("Error processing %s: %s", filename, e)
+
+        except Exception as e:
+            logger.error("Auto-ingest worker loop error: %s", e)
+        
+        await asyncio.sleep(60)  # Check every minute
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -61,6 +129,8 @@ def init_db():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Start the auto-ingest background task
+    asyncio.create_task(auto_ingest_worker())
     yield
 
 
@@ -138,52 +208,20 @@ async def health():
 @app.post("/upload-csv")
 async def upload_csv(file: UploadFile = File(...)):
     """
-    Parses an Apollo.io exported CSV file and adds contacts to the local database.
-    Skips duplicates based on email.
+    Manual upload via API (used by frontend or manual curl).
     """
     if not file.filename.endswith(".csv"):
         raise HTTPException(400, "File must be a CSV")
 
     contents = await file.read()
-    text = contents.decode("utf-8-sig")  # handle BOM if present
-    reader = csv.DictReader(StringIO(text))
-
-    saved_count = 0
-    duplicate_count = 0
-    skipped_count = 0
-
-    for row in reader:
-        email = row.get("Email", "").strip()
-        
-        # We only want contacts that actually have an email
-        if not email or email.lower() == "not available":
-            skipped_count += 1
-            continue
-
-        first_name = row.get("First Name", "").strip()
-        last_name = row.get("Last Name", "").strip()
-        
-        c = {
-            "name": f"{first_name} {last_name}".strip(),
-            "email": email,
-            "company": row.get("Company Name"),
-            "title": row.get("Title"),
-            "linkedin_url": row.get("Person Linkedin Url"),
-            "company_description": row.get("Keywords", ""), # Use keywords as brief context
-        }
-
-        row_id = upsert_contact(c)
-        if row_id:
-            saved_count += 1
-            logger.info("Imported via CSV: %s <%s>", c["name"], c["email"])
-        else:
-            duplicate_count += 1
+    text = contents.decode("utf-8-sig")
+    stats = process_csv_content(text)
 
     return {
         "message": "CSV processing complete",
-        "saved": saved_count,
-        "duplicates_skipped": duplicate_count,
-        "no_email_skipped": skipped_count
+        "saved": stats["saved"],
+        "duplicates_skipped": stats["duplicates"],
+        "no_email_skipped": stats["skipped"]
     }
 
 

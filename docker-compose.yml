@@ -87,6 +87,7 @@ services:
       - "8000:8000"
     volumes:
       - contacts_db_data:/app/data
+      - ./ingest:/app/ingest
     networks:
       - automation_net
 
