@@ -29,7 +29,9 @@ ollama_data/
 
 # Personal Data & Leads (DO NOT SHARE PUBLICLY)
 config.yaml
-assets/
-ingest/
+assets/*
+!assets/.gitkeep
+ingest/*
+!ingest/.gitkeep
 *.csv
 *.processed
