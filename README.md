@@ -69,11 +69,8 @@ docker exec -it ollama_llm ollama pull llama3.1:8b
 ### 5. Ingest your Apollo Leads
 
 1. Go to [Apollo.io](https://www.apollo.io), build a list of target companies/recruiters, and click **Export CSV**.
-2. Drop that `.csv` file into the root of this project folder.
-3. Run this command to digest the CSV into the local database (it automatically skips duplicates!):
-   ```bash
-   curl -X POST -F "file=@your-apollo-export.csv" http://localhost:8000/upload-csv
-   ```
+2. Drag and drop that `.csv` file into the **`ingest/`** folder in this project directory.
+3. Wait ~60 seconds. The system will automatically detect the file, digest the CSV into the local database (skipping duplicates), and rename the file to `.processed`.
 
 ### 6. Import the n8n logic
 
